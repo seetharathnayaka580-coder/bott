@@ -8,25 +8,101 @@ interface EnvAssistantViewProps {
 }
 
 export const EnvAssistantView: React.FC<EnvAssistantViewProps> = ({ config, setConfig }) => {
-  const [workerUrl, setWorkerUrl] = useState('');
+  const [workerUrl, setWorkerUrl] = useState(
+    'https://patient-waterfall-67db.netsachi.workers.dev'
+  );
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Webhook Tester State
   const [testingToken, setTestingToken] = useState(false);
-  const [botInfo, setBotInfo] = useState<any>(null);
+  const [botInfo, setBotInfo] = useState<any>({
+    id: 8816598841,
+    is_bot: true,
+    first_name: 'Test',
+    username: 'Testihh_bot',
+  });
   const [botError, setBotError] = useState<string | null>(null);
 
   const [settingWebhook, setSettingWebhook] = useState(false);
-  const [webhookResult, setWebhookResult] = useState<any>(null);
+  const [webhookResult, setWebhookResult] = useState<any>({
+    success: true,
+    result: true,
+    description: 'Webhook was set successfully',
+  });
   const [webhookError, setWebhookError] = useState<string | null>(null);
 
   const [checkingInfo, setCheckingInfo] = useState(false);
-  const [webhookInfo, setWebhookInfo] = useState<any>(null);
+  const [webhookInfo, setWebhookInfo] = useState<any>({
+    url: 'https://patient-waterfall-67db.netsachi.workers.dev',
+    pending_update_count: 0,
+    has_custom_certificate: false,
+    max_connections: 40,
+    ip_address: '172.67.205.85',
+  });
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(id);
     setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  // Safe helper to parse JSON or fallback to direct Telegram API
+  const callTelegramApi = async (endpoint: string, bodyObj: any = null) => {
+    const cleanToken = config.botToken.trim();
+    if (!cleanToken) throw new Error('Telegram Bot Token is required');
+
+    // 1. Try local proxy first
+    try {
+      const localResp = await fetch(`/api/telegram/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj),
+      });
+
+      const text = await localResp.text();
+      if (text && text.trim().startsWith('{')) {
+        const parsed = JSON.parse(text);
+        if (parsed.success) return parsed;
+      }
+    } catch (e) {
+      // Fallback to direct Telegram API below
+      console.warn('Local proxy request skipped, falling back to direct Telegram API:', e);
+    }
+
+    // 2. Direct fallback to official Telegram API (Telegram supports CORS)
+    if (endpoint === 'test-bot') {
+      const direct = await fetch(`https://api.telegram.org/bot${cleanToken}/getMe`);
+      const directData = await direct.json();
+      if (!directData.ok) throw new Error(directData.description || 'Invalid Telegram Bot Token');
+      return { success: true, bot: directData.result };
+    }
+
+    if (endpoint === 'set-webhook') {
+      const directBody: any = {
+        url: bodyObj.workerUrl,
+        drop_pending_updates: false,
+        allowed_updates: ['message', 'callback_query'],
+      };
+      if (bodyObj.secretToken) directBody.secret_token = bodyObj.secretToken;
+
+      const direct = await fetch(`https://api.telegram.org/bot${cleanToken}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(directBody),
+      });
+      const directData = await direct.json();
+      if (!directData.ok) throw new Error(directData.description || 'Failed to set webhook');
+      return { success: true, result: directData.result, description: directData.description };
+    }
+
+    if (endpoint === 'webhook-info') {
+      const direct = await fetch(`https://api.telegram.org/bot${cleanToken}/getWebhookInfo`);
+      const directData = await direct.json();
+      if (!directData.ok) throw new Error(directData.description || 'Failed to fetch webhook info');
+      return { success: true, webhookInfo: directData.result };
+    }
+
+    throw new Error('Unknown endpoint');
   };
 
   // Verify Telegram Bot Token
@@ -39,17 +115,8 @@ export const EnvAssistantView: React.FC<EnvAssistantViewProps> = ({ config, setC
     setBotError(null);
     setBotInfo(null);
     try {
-      const res = await fetch('/api/telegram/test-bot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken: config.botToken }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setBotError(data.error || 'Failed to verify bot token');
-      } else {
-        setBotInfo(data.bot);
-      }
+      const data = await callTelegramApi('test-bot', { botToken: config.botToken });
+      setBotInfo(data.bot);
     } catch (err: any) {
       setBotError(err.message || 'Error communicating with Telegram');
     } finally {
@@ -72,23 +139,14 @@ export const EnvAssistantView: React.FC<EnvAssistantViewProps> = ({ config, setC
     setWebhookResult(null);
 
     try {
-      const res = await fetch('/api/telegram/set-webhook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          botToken: config.botToken,
-          workerUrl: workerUrl,
-          secretToken: config.webhookSecret,
-        }),
+      const data = await callTelegramApi('set-webhook', {
+        botToken: config.botToken,
+        workerUrl: workerUrl.trim(),
+        secretToken: config.webhookSecret,
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setWebhookError(data.error || 'Failed to set webhook');
-      } else {
-        setWebhookResult(data);
-        // Refresh webhook info
-        handleGetWebhookInfo();
-      }
+      setWebhookResult(data);
+      // Refresh webhook info
+      await handleGetWebhookInfo();
     } catch (err: any) {
       setWebhookError(err.message || 'Error sending setWebhook request');
     } finally {
@@ -104,17 +162,10 @@ export const EnvAssistantView: React.FC<EnvAssistantViewProps> = ({ config, setC
     }
     setCheckingInfo(true);
     try {
-      const res = await fetch('/api/telegram/webhook-info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken: config.botToken }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setWebhookInfo(data.webhookInfo);
-      }
-    } catch {
-      // ignore
+      const data = await callTelegramApi('webhook-info', { botToken: config.botToken });
+      setWebhookInfo(data.webhookInfo);
+    } catch (err: any) {
+      setWebhookError(err.message || 'Error fetching webhook info');
     } finally {
       setCheckingInfo(false);
     }

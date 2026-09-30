@@ -20,6 +20,17 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Enable CORS for all API endpoints so iframe/browser calls never get blocked
+  app.use((req: Request, res: Response, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // 1. Test 3x-ui Panel Connection & Query Client Data
   app.post('/api/test-3xui', async (req: Request, res: Response) => {
     try {

@@ -17,12 +17,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('generator');
 
   const [config, setConfig] = useState<BotConfig>({
-    botName: '3x-ui Traffic Bot',
+    botName: 'Testihh_bot',
     panelUrl: 'https://vps.example.com:2053',
     panelUsername: 'admin',
     panelPassword: '',
     panelBasePath: '/',
-    botToken: '',
+    botToken: '8816598841:AAGCb3xY1E_zJRcU7MadZc_si4JJ7qYcJqA',
     adminTelegramId: '',
     webhookSecret: '',
     language: 'en',
