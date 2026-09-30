@@ -1,0 +1,6 @@
+{
+  "name": "3x-ui Telegram Bot Cloudflare Hub",
+  "description": "Custom Telegram bot generator and Cloudflare Worker deployment suite for 3x-ui panel client data usage checking, environment variables assistant, and API tester.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
